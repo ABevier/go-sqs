@@ -10,11 +10,11 @@ type BatchExecutor struct {
 	m              *sync.Mutex
 	sequenceNumber uint
 	currentBatch   *Batch
-	executeF       func(b Batch)
+	executeF       func(b *Batch)
 	maxLinger      time.Duration
 }
 
-func NewBatchExecutor(executeF func(b Batch)) *BatchExecutor {
+func NewBatchExecutor(executeF func(b *Batch)) *BatchExecutor {
 	return &BatchExecutor{
 		sequenceNumber: 0,
 		m:              &sync.Mutex{},
@@ -25,17 +25,17 @@ func NewBatchExecutor(executeF func(b Batch)) *BatchExecutor {
 
 type Batch struct {
 	batchId uint
-	Buffer  []string
+	Buffer  []interface{}
 }
 
-func (b *BatchExecutor) AddItem(msg string) {
+func (b *BatchExecutor) AddItem(item interface{}) {
 	var readyBatch *Batch = nil
 
 	b.m.Lock()
 	if b.currentBatch == nil {
 		b.currentBatch = newBatch(b)
 	}
-	b.currentBatch.Buffer = append(b.currentBatch.Buffer, msg)
+	b.currentBatch.Buffer = append(b.currentBatch.Buffer, item)
 
 	fmt.Printf("batch count = %v \n", len(b.currentBatch.Buffer))
 
@@ -48,7 +48,7 @@ func (b *BatchExecutor) AddItem(msg string) {
 	// be sure to execute the batch outside of the lock
 	if readyBatch != nil {
 		fmt.Println("FLUSHED DUE TO MAX SIZE")
-		b.executeF(*readyBatch)
+		b.executeF(readyBatch)
 	}
 }
 
@@ -58,7 +58,7 @@ func newBatch(be *BatchExecutor) *Batch {
 
 	result := &Batch{
 		batchId: be.sequenceNumber,
-		Buffer:  []string{},
+		Buffer:  make([]interface{}, 0, 10),
 	}
 
 	go expireBatch(be, be.sequenceNumber)
@@ -82,6 +82,6 @@ func expireBatch(be *BatchExecutor, batchId uint) {
 	// be sure to execute the batch outside of the lock
 	if readyBatch != nil {
 		fmt.Println("EXPIRED BATCH")
-		be.executeF(*readyBatch)
+		be.executeF(readyBatch)
 	}
 }

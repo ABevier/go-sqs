@@ -14,16 +14,13 @@ import (
 
 func main() {
 
-	printBatch := func(b Batch) {
-		for _, value := range b.Buffer {
-			fmt.Println(value)
-		}
-	}
-
-	be := NewBatchExecutor(printBatch)
+	sqsQueue := NewSqsQueue()
 
 	for i := 0; i < 44; i++ {
-		be.AddItem(strconv.Itoa(i))
+		go func(idx int) {
+			result := sqsQueue.SendMessage("msg:" + strconv.Itoa(idx))
+			fmt.Printf("result=%v\n", result)
+		}(i)
 	}
 
 	time.Sleep(10 * time.Second)
