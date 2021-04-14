@@ -13,8 +13,7 @@ import (
 )
 
 func main() {
-
-	sqsQueue := NewSqsQueue()
+	sqsQueue := NewSqsQueue("alan-test-queue", 3*time.Second)
 
 	for i := 0; i < 44; i++ {
 		go func(idx int) {

@@ -14,12 +14,12 @@ type BatchExecutor struct {
 	maxLinger      time.Duration
 }
 
-func NewBatchExecutor(executeF func(b *Batch)) *BatchExecutor {
+func NewBatchExecutor(maxLinger time.Duration, executeF func(b *Batch)) *BatchExecutor {
 	return &BatchExecutor{
 		sequenceNumber: 0,
 		m:              &sync.Mutex{},
 		executeF:       executeF,
-		maxLinger:      3 * time.Second,
+		maxLinger:      maxLinger,
 	}
 }
 
