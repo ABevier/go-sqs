@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	. "github.com/abevier/go-sqs/internal"
@@ -36,16 +35,36 @@ func main() {
 	fmt.Printf("Queue URL= . %v", result)
 	sqsQueue := NewSqsQueue(client, result.QueueUrl, 3*time.Second)
 
-	for i := 0; i < 14; i++ {
-		go func(idx int) {
-			result, err := sqsQueue.SendMessage("msg:" + strconv.Itoa(idx))
-			if err != nil {
-				fmt.Print(err)
-			} else {
-				fmt.Printf("result=%v\n", result)
-			}
-		}(i)
-	}
+	consumer := NewConsumer(sqsQueue)
+	consumer.Start()
+	consumeMessages(consumer)
+	consumer.Shutdown()
+
+	// for i := 0; i < 14; i++ {
+	// 	go func(idx int) {
+	// 		result, err := sqsQueue.SendMessage("msg:" + strconv.Itoa(idx))
+	// 		if err != nil {
+	// 			fmt.Print(err)
+	// 		} else {
+	// 			fmt.Printf("result=%v\n", result)
+	// 		}
+	// 	}(i)
+	// }
 
 	time.Sleep(10 * time.Second)
+}
+
+func consumeMessages(consumer *SqsQueueConsumer) {
+	timer := time.NewTimer(10 * time.Second)
+
+	for {
+		select {
+		case msg := <-consumer.MessageChan:
+			fmt.Printf("GOT MESSAGE: %v\n", msg)
+
+		case <-timer.C:
+			fmt.Println("timer tick")
+			return
+		}
+	}
 }
