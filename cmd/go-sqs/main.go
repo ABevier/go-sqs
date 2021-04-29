@@ -13,26 +13,15 @@ import (
 )
 
 func main() {
-	sqsQueue := NewSqsQueue("alan-test-queue", 3*time.Second)
-
-	for i := 0; i < 44; i++ {
-		go func(idx int) {
-			result := sqsQueue.SendMessage("msg:" + strconv.Itoa(idx))
-			fmt.Printf("result=%v\n", result)
-		}(i)
-	}
-
-	time.Sleep(10 * time.Second)
 
 	//
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		panic("config error")
 	}
-
 	client := sqs.NewFromConfig(cfg)
 
-	queueName := "alan-test-queue"
+	queueName := "abevier_test_queue"
 	input := &sqs.GetQueueUrlInput{
 		QueueName: &queueName,
 	}
@@ -45,4 +34,18 @@ func main() {
 	}
 
 	fmt.Printf("Queue URL= . %v", result)
+	sqsQueue := NewSqsQueue(client, result.QueueUrl, 3*time.Second)
+
+	for i := 0; i < 14; i++ {
+		go func(idx int) {
+			result, err := sqsQueue.SendMessage("msg:" + strconv.Itoa(idx))
+			if err != nil {
+				fmt.Print(err)
+			} else {
+				fmt.Printf("result=%v\n", result)
+			}
+		}(i)
+	}
+
+	time.Sleep(10 * time.Second)
 }

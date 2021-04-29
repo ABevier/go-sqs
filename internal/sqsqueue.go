@@ -2,12 +2,15 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
+
+const MAX_BATCH = 10
 
 type SqsQueue struct {
 	queueUrl       *string
@@ -19,7 +22,7 @@ type SqsQueue struct {
 type sendMessageRequest struct {
 	body         string
 	delaySeconds int
-	done         chan<- string
+	done         chan<- sendMessageResult
 }
 
 type deleteMessageRequest struct {
@@ -27,17 +30,23 @@ type deleteMessageRequest struct {
 	done          chan<- string
 }
 
-func NewSqsQueue(queueUrl string, maxLinger time.Duration) *SqsQueue {
+type sendMessageResult struct {
+	messageId string
+	err       error
+}
+
+func NewSqsQueue(client *sqs.Client, queueUrl *string, maxLinger time.Duration) *SqsQueue {
 	q := &SqsQueue{
-		queueUrl: &queueUrl,
+		client:   client,
+		queueUrl: queueUrl,
 	}
 	q.sendExecutor = NewBatchExecutor(maxLinger, q.executeSendBatch)
 	q.deleteExecutor = NewBatchExecutor(maxLinger, q.executeDeleteBatch)
 	return q
 }
 
-func (q *SqsQueue) SendMessage(messageBody string) string {
-	waitChannel := make(chan string)
+func (q *SqsQueue) SendMessage(messageBody string) (string, error) {
+	waitChannel := make(chan sendMessageResult)
 	request := &sendMessageRequest{
 		body: messageBody,
 		done: waitChannel,
@@ -45,21 +54,29 @@ func (q *SqsQueue) SendMessage(messageBody string) string {
 
 	q.sendExecutor.AddItem(request)
 
-	id := <-waitChannel
-	return id
+	result := <-waitChannel
+	if result.err != nil {
+		return "", result.err
+	}
+
+	return result.messageId, nil
 }
 
 func (q *SqsQueue) executeSendBatch(b *Batch) {
-	//TODO: use const
-	entries := make([]types.SendMessageBatchRequestEntry, 0, 10)
+	entries := make([]types.SendMessageBatchRequestEntry, 0, MAX_BATCH)
 
-	for i, value := range b.Buffer {
-		sendRequest := value.(*sendMessageRequest)
+	requests := make([]*sendMessageRequest, 0, MAX_BATCH)
+	for _, value := range b.Buffer {
+		request := value.(*sendMessageRequest)
+		requests = append(requests, request)
+	}
+
+	for i, request := range requests {
 		id := strconv.Itoa(i)
 		entry := types.SendMessageBatchRequestEntry{
 			Id:           &id,
-			MessageBody:  &sendRequest.body,
-			DelaySeconds: int32(sendRequest.delaySeconds),
+			MessageBody:  &request.body,
+			DelaySeconds: int32(request.delaySeconds),
 		}
 		entries = append(entries, entry)
 	}
@@ -72,17 +89,32 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 	result, err := q.client.SendMessageBatch(context.TODO(), batchRequest)
 	if err != nil {
 		//send errors to all waiters
+		for _, request := range requests {
+			request.done <- sendMessageResult{err: err}
+		}
 	}
 
 	for _, entry := range result.Successful {
-		id, err := strconv.Atoi(*entry.Id)
+		idx, err := strconv.Atoi(*entry.Id)
 		if err != nil {
 			//hosed....
 			continue
 		}
 
-		item := b.Buffer[id].(*sendMessageRequest)
-		item.done <- *entry.MessageId
+		request := requests[idx]
+		request.done <- sendMessageResult{messageId: *entry.MessageId}
+	}
+
+	for _, entry := range result.Failed {
+		idx, err := strconv.Atoi(*entry.Id)
+		if err != nil {
+			//hosed....
+			continue
+		}
+
+		request := requests[idx]
+		//TODO: make a custom error
+		request.done <- sendMessageResult{err: errors.New(*entry.Message)}
 	}
 }
 
