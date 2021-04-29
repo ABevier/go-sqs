@@ -32,7 +32,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Queue URL= . %v", result)
+	fmt.Printf("Queue URL= . %v\n", result.QueueUrl)
 	sqsQueue := NewSqsQueue(client, result.QueueUrl, 3*time.Second)
 
 	consumer := NewConsumer(sqsQueue)
@@ -55,12 +55,19 @@ func main() {
 }
 
 func consumeMessages(consumer *SqsQueueConsumer) {
+
 	timer := time.NewTimer(10 * time.Second)
 
 	for {
 		select {
 		case msg := <-consumer.MessageChan:
-			fmt.Printf("GOT MESSAGE: %v\n", msg)
+			go func() {
+				fmt.Printf("GOT MESSAGE: %v\n", msg)
+				err := msg.Ack()
+				if err != nil {
+					fmt.Println("failed to print")
+				}
+			}()
 
 		case <-timer.C:
 			fmt.Println("timer tick")

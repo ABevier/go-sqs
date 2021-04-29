@@ -8,9 +8,19 @@ import (
 
 const MAX_WAIT_TIME_SECONDS = 20
 
+type SqsMessage struct {
+	Body          *string
+	receiptHandle *string
+	queue         *SqsQueue
+}
+
+func (m *SqsMessage) Ack() error {
+	return m.queue.DeleteMessage(m.receiptHandle)
+}
+
 type SqsQueueConsumer struct {
 	queue       *SqsQueue
-	MessageChan <-chan string
+	MessageChan <-chan *SqsMessage
 	//TODO: atomic or better way to shut down
 	isShutudown bool
 }
@@ -23,7 +33,7 @@ func NewConsumer(queue *SqsQueue) *SqsQueueConsumer {
 }
 
 func (c *SqsQueueConsumer) Start() {
-	messageChannel := make(chan string)
+	messageChannel := make(chan *SqsMessage)
 	c.MessageChan = messageChannel
 
 	input := &sqs.ReceiveMessageInput{
@@ -37,10 +47,14 @@ func (c *SqsQueueConsumer) Start() {
 			//TODO: real context? do I actually want to cancel this on shutdown?
 			output, err := c.queue.client.ReceiveMessage(context.TODO(), input)
 			if err != nil {
-				//do nothing?
+				//do nothing for now
 			} else {
 				for _, message := range output.Messages {
-					messageChannel <- *message.Body
+					messageChannel <- &SqsMessage{
+						Body:          message.Body,
+						receiptHandle: message.ReceiptHandle,
+						queue:         c.queue,
+					}
 				}
 			}
 		}

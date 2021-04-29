@@ -25,14 +25,18 @@ type sendMessageRequest struct {
 	done         chan<- sendMessageResult
 }
 
-type deleteMessageRequest struct {
-	receiptHandle string
-	done          chan<- string
-}
-
 type sendMessageResult struct {
 	messageId string
 	err       error
+}
+
+type deleteMessageRequest struct {
+	receiptHandle *string
+	done          chan<- deleteMessageResult
+}
+
+type deleteMessageResult struct {
+	err error
 }
 
 func NewSqsQueue(client *sqs.Client, queueUrl *string, maxLinger time.Duration) *SqsQueue {
@@ -63,14 +67,13 @@ func (q *SqsQueue) SendMessage(messageBody string) (string, error) {
 }
 
 func (q *SqsQueue) executeSendBatch(b *Batch) {
-	entries := make([]types.SendMessageBatchRequestEntry, 0, MAX_BATCH)
-
 	requests := make([]*sendMessageRequest, 0, MAX_BATCH)
 	for _, value := range b.Buffer {
 		request := value.(*sendMessageRequest)
 		requests = append(requests, request)
 	}
 
+	entries := make([]types.SendMessageBatchRequestEntry, 0, MAX_BATCH)
 	for i, request := range requests {
 		id := strconv.Itoa(i)
 		entry := types.SendMessageBatchRequestEntry{
@@ -97,7 +100,7 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 	for _, entry := range result.Successful {
 		idx, err := strconv.Atoi(*entry.Id)
 		if err != nil {
-			//hosed....
+			//hosed.... what do?
 			continue
 		}
 
@@ -108,7 +111,7 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 	for _, entry := range result.Failed {
 		idx, err := strconv.Atoi(*entry.Id)
 		if err != nil {
-			//hosed....
+			//hosed.... what do?
 			continue
 		}
 
@@ -118,25 +121,69 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 	}
 }
 
-func (q *SqsQueue) DeleteMessage(receiptHandle string) string {
-	waitChannel := make(chan string)
+func (q *SqsQueue) DeleteMessage(receiptHandle *string) error {
+	waitChannel := make(chan deleteMessageResult)
 	request := &deleteMessageRequest{
 		receiptHandle: receiptHandle,
 		done:          waitChannel,
 	}
 
-	q.sendExecutor.AddItem(request)
+	q.deleteExecutor.AddItem(request)
 
-	id := <-waitChannel
-	return id
+	result := <-waitChannel
+	return result.err
 }
 
 func (q *SqsQueue) executeDeleteBatch(b *Batch) {
-	// simulate a long delay to sqs
-	time.Sleep(2 * time.Second)
-
+	requests := make([]*deleteMessageRequest, 0, MAX_BATCH)
 	for _, value := range b.Buffer {
-		sendRequest := value.(*deleteMessageRequest)
-		sendRequest.done <- "RESULT: " + sendRequest.receiptHandle
+		request := value.(*deleteMessageRequest)
+		requests = append(requests, request)
+	}
+
+	entries := make([]types.DeleteMessageBatchRequestEntry, 0, MAX_BATCH)
+	for i, request := range requests {
+		id := strconv.Itoa(i)
+		entry := types.DeleteMessageBatchRequestEntry{
+			Id:            &id,
+			ReceiptHandle: request.receiptHandle,
+		}
+		entries = append(entries, entry)
+	}
+
+	batchRequest := &sqs.DeleteMessageBatchInput{
+		QueueUrl: q.queueUrl,
+		Entries:  entries,
+	}
+
+	result, err := q.client.DeleteMessageBatch(context.TODO(), batchRequest)
+	if err != nil {
+		//send errors to all waiters
+		for _, request := range requests {
+			request.done <- deleteMessageResult{err: err}
+		}
+	}
+
+	for _, entry := range result.Successful {
+		idx, err := strconv.Atoi(*entry.Id)
+		if err != nil {
+			//hosed.... what do?
+			continue
+		}
+
+		request := requests[idx]
+		request.done <- deleteMessageResult{}
+	}
+
+	for _, entry := range result.Failed {
+		idx, err := strconv.Atoi(*entry.Id)
+		if err != nil {
+			//hosed.... what do?
+			continue
+		}
+
+		request := requests[idx]
+		//TODO: make a custom error
+		request.done <- deleteMessageResult{err: errors.New(*entry.Message)}
 	}
 }
