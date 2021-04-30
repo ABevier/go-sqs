@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -72,6 +73,11 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 		request := value.(*sendMessageRequest)
 		requests = append(requests, request)
 	}
+	defer func() {
+		for _, request := range requests {
+			close(request.done)
+		}
+	}()
 
 	entries := make([]types.SendMessageBatchRequestEntry, 0, MAX_BATCH)
 	for i, request := range requests {
@@ -100,7 +106,7 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 	for _, entry := range result.Successful {
 		idx, err := strconv.Atoi(*entry.Id)
 		if err != nil {
-			//hosed.... what do?
+			fmt.Printf("...hosed...what do?")
 			continue
 		}
 
@@ -111,7 +117,7 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 	for _, entry := range result.Failed {
 		idx, err := strconv.Atoi(*entry.Id)
 		if err != nil {
-			//hosed.... what do?
+			fmt.Printf("...hosed...what do?")
 			continue
 		}
 
@@ -167,7 +173,7 @@ func (q *SqsQueue) executeDeleteBatch(b *Batch) {
 	for _, entry := range result.Successful {
 		idx, err := strconv.Atoi(*entry.Id)
 		if err != nil {
-			//hosed.... what do?
+			fmt.Printf("...hosed...what do?")
 			continue
 		}
 
@@ -178,7 +184,7 @@ func (q *SqsQueue) executeDeleteBatch(b *Batch) {
 	for _, entry := range result.Failed {
 		idx, err := strconv.Atoi(*entry.Id)
 		if err != nil {
-			//hosed.... what do?
+			fmt.Printf("...hosed...what do?")
 			continue
 		}
 

@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"fmt"
 	"sync"
 	"time"
 )
@@ -29,27 +28,17 @@ type Batch struct {
 }
 
 func (b *BatchExecutor) AddItem(item interface{}) {
-	var readyBatch *Batch = nil
-
 	b.m.Lock()
 	if b.currentBatch == nil {
 		b.currentBatch = newBatch(b)
 	}
 	b.currentBatch.Buffer = append(b.currentBatch.Buffer, item)
 
-	fmt.Printf("batch count = %v \n", len(b.currentBatch.Buffer))
-
 	if len(b.currentBatch.Buffer) >= 10 {
-		readyBatch = b.currentBatch
+		go b.executeF(b.currentBatch)
 		b.currentBatch = nil
 	}
 	b.m.Unlock()
-
-	// be sure to execute the batch outside of the lock
-	if readyBatch != nil {
-		fmt.Println("FLUSHED DUE TO MAX SIZE")
-		b.executeF(readyBatch)
-	}
 }
 
 func newBatch(be *BatchExecutor) *Batch {
@@ -67,21 +56,12 @@ func newBatch(be *BatchExecutor) *Batch {
 }
 
 func expireBatch(be *BatchExecutor, batchId uint) {
-	var readyBatch *Batch = nil
-
 	time.Sleep(be.maxLinger)
 
 	be.m.Lock()
-	fmt.Printf("Check Batch with id: %v\n", batchId)
 	if be.currentBatch != nil && be.currentBatch.batchId == batchId {
-		readyBatch = be.currentBatch
+		go be.executeF(be.currentBatch)
 		be.currentBatch = nil
 	}
 	be.m.Unlock()
-
-	// be sure to execute the batch outside of the lock
-	if readyBatch != nil {
-		fmt.Println("EXPIRED BATCH")
-		be.executeF(readyBatch)
-	}
 }

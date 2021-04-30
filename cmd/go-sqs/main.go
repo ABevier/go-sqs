@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"sync"
 	"time"
 
 	. "github.com/abevier/go-sqs/internal"
@@ -35,43 +37,35 @@ func main() {
 	fmt.Printf("Queue URL= . %v\n", result.QueueUrl)
 	sqsQueue := NewSqsQueue(client, result.QueueUrl, 3*time.Second)
 
-	consumer := NewConsumer(sqsQueue)
-	consumer.Start()
-	consumeMessages(consumer)
+	numMessages := 10
+	wg := sync.WaitGroup{}
+	wg.Add(numMessages)
+
+	for i := 0; i < numMessages; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			result, err := sqsQueue.SendMessage("msg:" + strconv.Itoa(idx))
+			if err != nil {
+				fmt.Print(err)
+			} else {
+				fmt.Printf("send msg %v and had id=%v\n", idx, result)
+			}
+		}(i)
+	}
+
+	fmt.Println("waiting for sending to complete")
+	wg.Wait()
+	fmt.Println("done waiting")
+
+	consumer := NewConsumer(sqsQueue, 20, 10, consumeMessageCallback)
+	consumer.Start() // Give this a callback
+	time.Sleep(20 * time.Second)
 	consumer.Shutdown()
 
-	// for i := 0; i < 14; i++ {
-	// 	go func(idx int) {
-	// 		result, err := sqsQueue.SendMessage("msg:" + strconv.Itoa(idx))
-	// 		if err != nil {
-	// 			fmt.Print(err)
-	// 		} else {
-	// 			fmt.Printf("result=%v\n", result)
-	// 		}
-	// 	}(i)
-	// }
-
+	fmt.Printf("it's shut down")
 	time.Sleep(10 * time.Second)
 }
 
-func consumeMessages(consumer *SqsQueueConsumer) {
-
-	timer := time.NewTimer(10 * time.Second)
-
-	for {
-		select {
-		case msg := <-consumer.MessageChan:
-			go func() {
-				fmt.Printf("GOT MESSAGE: %v\n", msg)
-				err := msg.Ack()
-				if err != nil {
-					fmt.Println("failed to print")
-				}
-			}()
-
-		case <-timer.C:
-			fmt.Println("timer tick")
-			return
-		}
-	}
+func consumeMessageCallback(message *string) {
+	fmt.Printf("GOT MESSAGE: %v\n", *message)
 }
