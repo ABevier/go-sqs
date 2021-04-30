@@ -77,12 +77,16 @@ func (c *SqsQueueConsumer) Start() {
 		}
 	}()
 
-	// processing function
-	go func() {
-		for msg := range messageChannel {
-			go processMessage(msg, c.callbackFunc)
-		}
-	}()
+	// Start a bunch of workers
+	for i := 0; i < c.maxProcessing; i++ {
+		go func(id int) {
+			for msg := range messageChannel {
+				fmt.Printf("Handling message: %v on worker: %v\n", *msg.body, id)
+				processMessage(msg, c.callbackFunc)
+			}
+		}(i)
+	}
+
 }
 
 func processMessage(msg *SqsMessage, callback MessageCallbackFunc) {

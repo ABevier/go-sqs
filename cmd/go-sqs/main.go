@@ -37,7 +37,7 @@ func main() {
 	fmt.Printf("Queue URL= . %v\n", result.QueueUrl)
 	sqsQueue := NewSqsQueue(client, result.QueueUrl, 3*time.Second)
 
-	numMessages := 10
+	numMessages := 15
 	wg := sync.WaitGroup{}
 	wg.Add(numMessages)
 
@@ -62,7 +62,7 @@ func main() {
 	time.Sleep(20 * time.Second)
 	consumer.Shutdown()
 
-	fmt.Printf("it's shut down")
+	fmt.Println("it's shut down")
 	time.Sleep(10 * time.Second)
 }
 

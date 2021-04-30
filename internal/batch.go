@@ -27,18 +27,19 @@ type Batch struct {
 	Buffer  []interface{}
 }
 
-func (b *BatchExecutor) AddItem(item interface{}) {
-	b.m.Lock()
-	if b.currentBatch == nil {
-		b.currentBatch = newBatch(b)
-	}
-	b.currentBatch.Buffer = append(b.currentBatch.Buffer, item)
+func (be *BatchExecutor) AddItem(item interface{}) {
+	be.m.Lock()
+	defer be.m.Unlock()
 
-	if len(b.currentBatch.Buffer) >= 10 {
-		go b.executeF(b.currentBatch)
-		b.currentBatch = nil
+	if be.currentBatch == nil {
+		be.currentBatch = newBatch(be)
 	}
-	b.m.Unlock()
+	be.currentBatch.Buffer = append(be.currentBatch.Buffer, item)
+
+	if len(be.currentBatch.Buffer) >= 10 {
+		go be.executeF(be.currentBatch)
+		be.currentBatch = nil
+	}
 }
 
 func newBatch(be *BatchExecutor) *Batch {
@@ -59,9 +60,10 @@ func expireBatch(be *BatchExecutor, batchId uint) {
 	time.Sleep(be.maxLinger)
 
 	be.m.Lock()
+	defer be.m.Unlock()
+
 	if be.currentBatch != nil && be.currentBatch.batchId == batchId {
 		go be.executeF(be.currentBatch)
 		be.currentBatch = nil
 	}
-	be.m.Unlock()
 }
