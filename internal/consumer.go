@@ -17,7 +17,7 @@ type SqsMessage struct {
 	queue         *SqsQueue
 }
 
-func (m *SqsMessage) Ack() error {
+func (m *SqsMessage) ack() error {
 	return m.queue.DeleteMessage(m.receiptHandle)
 }
 
@@ -41,6 +41,9 @@ func NewConsumer(queue *SqsQueue, maxPrefetch, maxProcessing int, callback Messa
 }
 
 func (c *SqsQueueConsumer) Start() {
+	retreiveCompleteChannel := make(chan []*SqsMessage)
+	workCompleteChannel := make(chan struct{})
+
 	messageChannel := make(chan *SqsMessage, c.maxPrefetch)
 
 	input := &sqs.ReceiveMessageInput{
@@ -49,7 +52,6 @@ func (c *SqsQueueConsumer) Start() {
 		WaitTimeSeconds:     MAX_WAIT_TIME_SECONDS,
 	}
 
-	// TODO: manage outbound requests
 	// number of outbound requests.  min of 1 to max of config value
 	// do a request
 	// count number of messages pulled
@@ -57,24 +59,43 @@ func (c *SqsQueueConsumer) Start() {
 	// if less than 3 - do no make a request another request (unless 0 reuqests would be outstanding)
 	// also check this against the number i'm allowed to prefetch
 
-	//Fetch function
 	go func() {
-		defer close(messageChannel)
+		numMessages := 0
+		numInflightRetrieveRequests := 0
+		retrieveRequestLimit := MINIMUM_RETRIEVE_REQUEST_LIMIT
+
 		for !c.isShutudown {
-			//TODO: real context? do I actually want to cancel this on shutdown?
-			output, err := c.queue.client.ReceiveMessage(context.TODO(), input)
-			if err != nil {
-				//do nothing for now
-			} else {
-				for _, message := range output.Messages {
-					messageChannel <- &SqsMessage{
-						body:          message.Body,
-						receiptHandle: message.ReceiptHandle,
-						queue:         c.queue,
+			neededRequests := calculateNeededFetches(numMessages, numInflightRetrieveRequests, retrieveRequestLimit)
+
+			fmt.Printf("Consumer State: msgCnt: %v retrieveCnt: %v retrieveLimit: %v needed: %v \n",
+				numMessages, numInflightRetrieveRequests, retrieveRequestLimit, neededRequests)
+
+			for i := 0; i < neededRequests; i++ {
+				go receiveMessages(c.queue, input, retreiveCompleteChannel)
+			}
+			numInflightRetrieveRequests += neededRequests
+
+			select {
+			case resp := <-retreiveCompleteChannel:
+				count := len(resp)
+				numMessages += count
+				retrieveRequestLimit = calculateNewFetchRequestLimit(retrieveRequestLimit, count)
+				numInflightRetrieveRequests--
+
+				//TODO: is gross
+				go func() {
+					for _, m := range resp {
+						messageChannel <- m
 					}
-				}
+				}()
+
+			case <-workCompleteChannel:
+				numMessages--
 			}
 		}
+
+		//TODO: this is probably not great?
+		close(messageChannel)
 	}()
 
 	// Start a bunch of workers
@@ -83,16 +104,37 @@ func (c *SqsQueueConsumer) Start() {
 			for msg := range messageChannel {
 				fmt.Printf("Handling message: %v on worker: %v\n", *msg.body, id)
 				processMessage(msg, c.callbackFunc)
+				workCompleteChannel <- struct{}{}
 			}
 		}(i)
 	}
+}
 
+func receiveMessages(queue *SqsQueue, input *sqs.ReceiveMessageInput, responseChannel chan []*SqsMessage) {
+	//TODO: real context? do I actually want to cancel this on shutdown?
+	output, err := queue.client.ReceiveMessage(context.TODO(), input)
+	if err != nil {
+		//TODO: log to a provided logger?
+		responseChannel <- make([]*SqsMessage, 0)
+	} else {
+		sqsMessages := make([]*SqsMessage, 0, 10)
+
+		for _, message := range output.Messages {
+			sqsMessage := &SqsMessage{
+				body:          message.Body,
+				receiptHandle: message.ReceiptHandle,
+				queue:         queue,
+			}
+			sqsMessages = append(sqsMessages, sqsMessage)
+		}
+		responseChannel <- sqsMessages
+	}
 }
 
 func processMessage(msg *SqsMessage, callback MessageCallbackFunc) {
 	//TODO: check return of the callback type and take a different action beside just acking
 	callback(msg.body)
-	err := msg.Ack()
+	err := msg.ack()
 	if err != nil {
 		fmt.Printf("err acking - what do? %v", err)
 	}

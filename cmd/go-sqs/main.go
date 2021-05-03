@@ -34,10 +34,10 @@ func main() {
 		return
 	}
 
-	fmt.Printf("Queue URL= . %v\n", result.QueueUrl)
+	fmt.Printf("Queue URL= . %v\n", *result.QueueUrl)
 	sqsQueue := NewSqsQueue(client, result.QueueUrl, 3*time.Second)
 
-	numMessages := 15
+	numMessages := 1
 	wg := sync.WaitGroup{}
 	wg.Add(numMessages)
 
@@ -59,7 +59,7 @@ func main() {
 
 	consumer := NewConsumer(sqsQueue, 20, 10, consumeMessageCallback)
 	consumer.Start() // Give this a callback
-	time.Sleep(20 * time.Second)
+	time.Sleep(30 * time.Second)
 	consumer.Shutdown()
 
 	fmt.Println("it's shut down")
@@ -67,5 +67,5 @@ func main() {
 }
 
 func consumeMessageCallback(message *string) {
-	fmt.Printf("GOT MESSAGE: %v\n", *message)
+	//fmt.Printf("GOT MESSAGE: %v\n", *message)
 }

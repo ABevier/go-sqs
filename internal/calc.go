@@ -1,6 +1,6 @@
 package internal
 
-const MINIMUM_FETCH_REQUEST_LIMIT = 1
+const MINIMUM_RETRIEVE_REQUEST_LIMIT = 1
 
 //TODO: make a struct
 const MAX_PREFETCHED_MESSAGES = 100
@@ -30,7 +30,7 @@ func calculateNewFetchRequestLimit(currentFetchLimit, lastFetchedCount int) int 
 	adjustment := calculateAdjustment(lastFetchedCount)
 	desiredNewLimit := currentFetchLimit + adjustment
 
-	return constrain(desiredNewLimit, MINIMUM_FETCH_REQUEST_LIMIT, MAX_OUTSTANDING_FETCH_REQUESTS)
+	return constrain(desiredNewLimit, MINIMUM_RETRIEVE_REQUEST_LIMIT, MAX_OUTSTANDING_FETCH_REQUESTS)
 }
 
 //TODO: make this configurable
