@@ -51,10 +51,15 @@ func NewSqsQueue(client *sqs.Client, queueUrl *string, maxLinger time.Duration) 
 }
 
 func (q *SqsQueue) SendMessage(messageBody string) (string, error) {
+	return q.SendMessageWithDelay(messageBody, 0)
+}
+
+func (q *SqsQueue) SendMessageWithDelay(messageBody string, delaySecond int) (string, error) {
 	waitChannel := make(chan sendMessageResult)
 	request := &sendMessageRequest{
-		body: messageBody,
-		done: waitChannel,
+		body:         messageBody,
+		delaySeconds: delaySecond,
+		done:         waitChannel,
 	}
 
 	q.sendExecutor.AddItem(request)
@@ -97,10 +102,12 @@ func (q *SqsQueue) executeSendBatch(b *Batch) {
 
 	result, err := q.client.SendMessageBatch(context.TODO(), batchRequest)
 	if err != nil {
+		panic(err)
 		//send errors to all waiters
-		for _, request := range requests {
-			request.done <- sendMessageResult{err: err}
-		}
+		// for _, request := range requests {
+		// 	request.done <- sendMessageResult{err: err}
+		// }
+		// return
 	}
 
 	for _, entry := range result.Successful {
@@ -168,6 +175,7 @@ func (q *SqsQueue) executeDeleteBatch(b *Batch) {
 		for _, request := range requests {
 			request.done <- deleteMessageResult{err: err}
 		}
+		return
 	}
 
 	for _, entry := range result.Successful {

@@ -65,7 +65,7 @@ func (c *SqsQueueConsumer) Start() {
 		retrieveRequestLimit := MINIMUM_RETRIEVE_REQUEST_LIMIT
 
 		for !c.isShutudown {
-			neededRequests := calculateNeededFetches(numMessages, numInflightRetrieveRequests, retrieveRequestLimit)
+			neededRequests := calculateNeededRetrieveRequests(numMessages, numInflightRetrieveRequests, retrieveRequestLimit)
 
 			fmt.Printf("Consumer State: msgCnt: %v retrieveCnt: %v retrieveLimit: %v needed: %v \n",
 				numMessages, numInflightRetrieveRequests, retrieveRequestLimit, neededRequests)
@@ -79,7 +79,7 @@ func (c *SqsQueueConsumer) Start() {
 			case resp := <-retreiveCompleteChannel:
 				count := len(resp)
 				numMessages += count
-				retrieveRequestLimit = calculateNewFetchRequestLimit(retrieveRequestLimit, count)
+				retrieveRequestLimit = calculateNewRetrieveRequestLimit(retrieveRequestLimit, count)
 				numInflightRetrieveRequests--
 
 				//TODO: is gross
@@ -132,7 +132,7 @@ func receiveMessages(queue *SqsQueue, input *sqs.ReceiveMessageInput, responseCh
 }
 
 func processMessage(msg *SqsMessage, callback MessageCallbackFunc) {
-	//TODO: check return of the callback type and take a different action beside just acking
+	//TODO: check return of the callback type and take a different action beside just acking?
 	callback(msg.body)
 	err := msg.ack()
 	if err != nil {

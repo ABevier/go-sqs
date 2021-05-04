@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	. "github.com/abevier/go-sqs/internal"
@@ -37,7 +38,7 @@ func main() {
 	fmt.Printf("Queue URL= . %v\n", *result.QueueUrl)
 	sqsQueue := NewSqsQueue(client, result.QueueUrl, 3*time.Second)
 
-	numMessages := 1
+	numMessages := 1000
 	wg := sync.WaitGroup{}
 	wg.Add(numMessages)
 
@@ -57,15 +58,17 @@ func main() {
 	wg.Wait()
 	fmt.Println("done waiting")
 
-	consumer := NewConsumer(sqsQueue, 20, 10, consumeMessageCallback)
-	consumer.Start() // Give this a callback
-	time.Sleep(30 * time.Second)
+	var count int64
+
+	consumer := NewConsumer(sqsQueue, 20, 10, func(message *string) {
+		atomic.AddInt64(&count, 1)
+	})
+
+	consumer.Start()
+	time.Sleep(60 * time.Second)
 	consumer.Shutdown()
 
-	fmt.Println("it's shut down")
-	time.Sleep(10 * time.Second)
-}
+	fmt.Printf("it's shut down after reading %v messages\n", count)
 
-func consumeMessageCallback(message *string) {
-	//fmt.Printf("GOT MESSAGE: %v\n", *message)
+	time.Sleep(10 * time.Second)
 }
