@@ -25,6 +25,7 @@ requests based on the volume of messages in the queue.
 
 
 TODO
-- Automated retries with exponential backoff
+- Ability to set your own logger
+- Ability to query metrics
 - Callback handler for failed ACKs?
-- Metrics?
+- Automated retries with exponential backoff?

@@ -53,7 +53,7 @@ func NewConsumer(opts Opts, publisher *SQSPublisher, callback MessageCallbackFun
 }
 
 func (c *SQSConsumer) Start() {
-	workCompleteChannel := make(chan struct{})
+	msgProcessingCompleteChannel := make(chan struct{})
 
 	messageChan := make(chan SQSMessage, c.maxReceivedMessages)
 
@@ -65,10 +65,9 @@ func (c *SQSConsumer) Start() {
 	// also check this against the number i'm allowed to prefetch
 
 	go func() {
-		newMessagesChan := make(chan []SQSMessage)
-		receiveWG := sync.WaitGroup{}
+		retreivedMsgChan := make(chan []SQSMessage)
 
-		numMessages := 0
+		numReceivedMessages := 0
 		numInflightRetrieveRequests := 0
 		retrieveRequestLimit := minOutstandingReceiveRequests
 
@@ -76,43 +75,39 @@ func (c *SQSConsumer) Start() {
 
 		for {
 			if atomic.LoadUint32(&c.isShutudown) == 1 {
-				if numInflightRetrieveRequests == 0 && numMessages == 0 {
+				if numInflightRetrieveRequests == 0 && numReceivedMessages == 0 {
 					break
 				}
 			} else {
-				neededRequests := calculator.NeededReceiveRequests(numMessages, numInflightRetrieveRequests, retrieveRequestLimit)
+				neededRequests := calculator.NeededReceiveRequests(numReceivedMessages, numInflightRetrieveRequests, retrieveRequestLimit)
 
 				// fmt.Printf("Consumer State: msgCnt: %v retrieveCnt: %v retrieveLimit: %v needed: %v \n",
 				// 	numMessages, numInflightRetrieveRequests, retrieveRequestLimit, neededRequests)
 
 				for i := 0; i < neededRequests; i++ {
-					receiveWG.Add(1)
 					go func() {
-						defer receiveWG.Done()
-						receiveMessageWorker(c.publisher, newMessagesChan)
+						receiveMessageWorker(c.publisher, retreivedMsgChan)
 					}()
 				}
 				numInflightRetrieveRequests += neededRequests
 			}
 
 			select {
-			case resp := <-newMessagesChan:
-				count := len(resp)
-				numMessages += count
-				retrieveRequestLimit = calculator.NewReceiveRequestLimit(retrieveRequestLimit, count)
+			case msgs := <-retreivedMsgChan:
 				numInflightRetrieveRequests--
-				for _, m := range resp {
+				numReceivedMessages += len(msgs)
+				retrieveRequestLimit = calculator.NewReceiveRequestLimit(retrieveRequestLimit, len(msgs))
+				for _, m := range msgs {
 					messageChan <- m
 				}
 
-			case <-workCompleteChannel:
-				numMessages--
+			case <-msgProcessingCompleteChannel:
+				numReceivedMessages--
 			}
 		}
 
-		// make sure receiving is done before closing the channels
-		receiveWG.Wait()
-		close(newMessagesChan)
+		// All writers to these channels should have completed by the time the above loop exits
+		close(retreivedMsgChan)
 		close(messageChan)
 	}()
 
@@ -125,13 +120,13 @@ func (c *SQSConsumer) Start() {
 			for msg := range messageChan {
 				log.Printf("Handling message: %v on worker: %v\n", msg.body, id)
 				c.processMessage(msg)
-				workCompleteChannel <- struct{}{}
+				msgProcessingCompleteChannel <- struct{}{}
 			}
 		}(i)
 	}
 }
 
-func receiveMessageWorker(publisher *SQSPublisher, newMsgChan chan<- []SQSMessage) {
+func receiveMessageWorker(publisher *SQSPublisher, receivedMsgChan chan<- []SQSMessage) {
 	input := &sqs.ReceiveMessageInput{
 		QueueUrl:            &publisher.queueUrl,
 		MaxNumberOfMessages: MaxSQSBatch,
@@ -142,7 +137,7 @@ func receiveMessageWorker(publisher *SQSPublisher, newMsgChan chan<- []SQSMessag
 	output, err := publisher.client.ReceiveMessage(context.TODO(), input)
 	if err != nil {
 		//TODO: log to a provided logger?
-		newMsgChan <- nil
+		receivedMsgChan <- nil
 	} else {
 		msgs := make([]SQSMessage, 0, len(output.Messages))
 
@@ -158,7 +153,7 @@ func receiveMessageWorker(publisher *SQSPublisher, newMsgChan chan<- []SQSMessag
 			}
 			msgs = append(msgs, m)
 		}
-		newMsgChan <- msgs
+		receivedMsgChan <- msgs
 	}
 }
 
