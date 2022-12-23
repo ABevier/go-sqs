@@ -2,7 +2,6 @@ package gosqs
 
 import (
 	"context"
-	"log"
 	"testing"
 	"time"
 
@@ -17,7 +16,6 @@ func TestConsumer(t *testing.T) {
 
 	cb := func(ctx context.Context, msg string) error {
 		time.Sleep(10 * time.Millisecond)
-		log.Printf("process a message")
 		return nil
 	}
 

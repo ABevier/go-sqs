@@ -76,7 +76,7 @@ func (c *SQSConsumer) Start() {
 
 		for {
 			if atomic.LoadUint32(&c.isShutudown) == 1 {
-				if numInflightRetrieveRequests == 0 {
+				if numInflightRetrieveRequests == 0 && numMessages == 0 {
 					break
 				}
 			} else {
@@ -125,7 +125,6 @@ func (c *SQSConsumer) Start() {
 			for msg := range messageChan {
 				log.Printf("Handling message: %v on worker: %v\n", msg.body, id)
 				c.processMessage(msg)
-				log.Printf("done processing")
 				workCompleteChannel <- struct{}{}
 			}
 		}(i)

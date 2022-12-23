@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"time"
 
@@ -126,7 +125,6 @@ func (p *SQSPublisher) sendBatch(msgs []sendRequest) ([]results.Result[string], 
 
 func (p *SQSPublisher) DeleteMessage(ctx context.Context, receiptHandle string) error {
 	_, err := p.deleter.Submit(ctx, receiptHandle)
-	log.Printf("DELETE SUCCESS")
 	return err
 }
 
