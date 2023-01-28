@@ -71,7 +71,7 @@ func (c *SQSConsumer) Start() {
 		numInflightRetrieveRequests := 0
 		retrieveRequestLimit := minOutstandingReceiveRequests
 
-		calculator := newCalculator(c.maxReceivedMessages, c.maxInflightReceiveMessageRequests)
+		calc := newCalculator(c.maxReceivedMessages, c.maxInflightReceiveMessageRequests)
 
 		for {
 			if atomic.LoadUint32(&c.isShutudown) == 1 {
@@ -79,7 +79,7 @@ func (c *SQSConsumer) Start() {
 					break
 				}
 			} else {
-				neededRequests := calculator.NeededReceiveRequests(numReceivedMessages, numInflightRetrieveRequests, retrieveRequestLimit)
+				neededRequests := calc.NeededReceiveRequests(numReceivedMessages, numInflightRetrieveRequests, retrieveRequestLimit)
 
 				// fmt.Printf("Consumer State: msgCnt: %v retrieveCnt: %v retrieveLimit: %v needed: %v \n",
 				// 	numMessages, numInflightRetrieveRequests, retrieveRequestLimit, neededRequests)
@@ -96,7 +96,7 @@ func (c *SQSConsumer) Start() {
 			case msgs := <-retreivedMsgChan:
 				numInflightRetrieveRequests--
 				numReceivedMessages += len(msgs)
-				retrieveRequestLimit = calculator.NewReceiveRequestLimit(retrieveRequestLimit, len(msgs))
+				retrieveRequestLimit = calc.NewReceiveRequestLimit(retrieveRequestLimit, len(msgs))
 				for _, m := range msgs {
 					messageChan <- m
 				}

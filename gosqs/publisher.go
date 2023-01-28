@@ -27,8 +27,8 @@ var (
 type SQSPublisher struct {
 	queueUrl string
 	client   SQSClient
-	sender   *batch.BatchExecutor[sendRequest, string]
-	deleter  *batch.BatchExecutor[string, string]
+	sender   *batch.Executor[sendRequest, string]
+	deleter  *batch.Executor[string, string]
 }
 
 type sendRequest struct {
