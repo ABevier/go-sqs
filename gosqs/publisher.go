@@ -136,7 +136,7 @@ func (p *SQSPublisher) deleteBatch(receiptHandles []string) ([]results.Result[st
 		id := strconv.Itoa(i)
 		entry := types.DeleteMessageBatchRequestEntry{
 			Id:            &id,
-			ReceiptHandle: &handle,
+			ReceiptHandle: ptr(handle),
 		}
 		entries = append(entries, entry)
 	}
@@ -202,4 +202,8 @@ func makeBatchError(entry types.BatchResultErrorEntry) error {
 	}
 
 	return fmt.Errorf("code \"%s\" message \"%s\" senderfault \"%t\": %w", code, message, entry.SenderFault, ErrSendFailed)
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

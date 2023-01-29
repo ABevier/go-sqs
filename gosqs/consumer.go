@@ -2,7 +2,6 @@ package gosqs
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -168,7 +167,7 @@ func (c *SQSConsumer) processMessage(msg SQSMessage) {
 
 	if err := msg.ack(); err != nil {
 		// TODO: log something??
-		fmt.Printf("err acking - what do? %v", err)
+		log.Printf("err acking - what do? %v", err)
 	}
 }
 
