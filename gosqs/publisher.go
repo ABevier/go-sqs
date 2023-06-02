@@ -67,7 +67,7 @@ func (p *SQSPublisher) sendBatch(msgs []sendRequest) ([]results.Result[string], 
 		id := strconv.Itoa(i)
 		entry := types.SendMessageBatchRequestEntry{
 			Id:           &id,
-			MessageBody:  &msg.body,
+			MessageBody:  ptr(msg.body),
 			DelaySeconds: int32(msg.delaySeconds),
 		}
 		entries = append(entries, entry)
