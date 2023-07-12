@@ -30,9 +30,12 @@ type SQSConsumer struct {
 
 	callbackFunc MessageCallbackFunc
 
-	workerWG     *sync.WaitGroup
-	isShutudown  uint32
-	shutdownChan chan struct{}
+	workerWG              *sync.WaitGroup
+	isShutdown            uint32
+	isRxShutdown          uint32
+	shutdownInitiatedChan chan struct{}
+	shutdownChan          chan struct{}
+	rxShutdownChan        chan struct{}
 }
 
 func NewConsumer(opts Opts, publisher *SQSPublisher, callback MessageCallbackFunc) *SQSConsumer {
@@ -45,9 +48,12 @@ func NewConsumer(opts Opts, publisher *SQSPublisher, callback MessageCallbackFun
 
 		callbackFunc: callback,
 
-		workerWG:     &sync.WaitGroup{},
-		isShutudown:  0,
-		shutdownChan: make(chan struct{}),
+		workerWG:              &sync.WaitGroup{},
+		isShutdown:            0,
+		isRxShutdown:          0,
+		shutdownInitiatedChan: make(chan struct{}),
+		shutdownChan:          make(chan struct{}),
+		rxShutdownChan:        make(chan struct{}),
 	}
 }
 
@@ -60,11 +66,11 @@ func (c *SQSConsumer) Start() {
 	// do a request
 	// count number of messages pulled
 	// if greater than 7 - make 2 requests
-	// if less than 3 - do no make a request another request (unless 0 reuqests would be outstanding)
-	// also check this against the number i'm allowed to prefetch
+	// if less than 3 - do not make a request another request (unless 0 requests would be outstanding)
+	// also check this against the number I'm allowed to prefetch
 
 	go func() {
-		retreivedMsgChan := make(chan []SQSMessage)
+		retrievedMsgChan := make(chan []SQSMessage)
 
 		numReceivedMessages := 0
 		numInflightRetrieveRequests := 0
@@ -73,9 +79,17 @@ func (c *SQSConsumer) Start() {
 		calc := newCalculator(c.maxReceivedMessages, c.maxInflightReceiveMessageRequests)
 
 		for {
-			if atomic.LoadUint32(&c.isShutudown) == 1 {
-				if numInflightRetrieveRequests == 0 && numReceivedMessages == 0 {
-					break
+			if atomic.LoadUint32(&c.isShutdown) == 1 {
+				if numInflightRetrieveRequests == 0 {
+					// Close the rx shutdown channel to signal that all SQS receive requests have completed. Note that
+					// the processing for these requests, or for the messages returned for the requests, could still be
+					// in progress after the channel is closed.
+					if atomic.CompareAndSwapUint32(&c.isRxShutdown, 0, 1) {
+						close(c.rxShutdownChan)
+					}
+					if numReceivedMessages == 0 {
+						break
+					}
 				}
 			} else {
 				neededRequests := calc.NeededReceiveRequests(numReceivedMessages, numInflightRetrieveRequests, retrieveRequestLimit)
@@ -85,14 +99,14 @@ func (c *SQSConsumer) Start() {
 
 				for i := 0; i < neededRequests; i++ {
 					go func() {
-						receiveMessageWorker(c.publisher, retreivedMsgChan)
+						receiveMessageWorker(c.publisher, retrievedMsgChan)
 					}()
 				}
 				numInflightRetrieveRequests += neededRequests
 			}
 
 			select {
-			case msgs := <-retreivedMsgChan:
+			case msgs := <-retrievedMsgChan:
 				numInflightRetrieveRequests--
 				numReceivedMessages += len(msgs)
 				retrieveRequestLimit = calc.NewReceiveRequestLimit(retrieveRequestLimit, len(msgs))
@@ -102,11 +116,16 @@ func (c *SQSConsumer) Start() {
 
 			case <-msgProcessingCompleteChannel:
 				numReceivedMessages--
+			case _, ok := <-c.shutdownInitiatedChan:
+				if ok {
+					log.Printf("Initiating shutdown...")
+				}
+				// TODO: Do something else if the channel was already closed?
 			}
 		}
 
 		// All writers to these channels should have completed by the time the above loop exits
-		close(retreivedMsgChan)
+		close(retrievedMsgChan)
 		close(messageChan)
 	}()
 
@@ -117,7 +136,8 @@ func (c *SQSConsumer) Start() {
 			defer c.workerWG.Done()
 
 			for msg := range messageChan {
-				log.Printf("Handling message: %v on worker: %v\n", msg.body, id)
+				// TODO: disabling for now, will add back with better logging level support
+				//log.Printf("Handling message: %v on worker: %v\n", msg.body, id)
 				c.processMessage(msg)
 				msgProcessingCompleteChannel <- struct{}{}
 			}
@@ -172,11 +192,21 @@ func (c *SQSConsumer) processMessage(msg SQSMessage) {
 }
 
 func (c *SQSConsumer) Shutdown() {
-	if atomic.CompareAndSwapUint32(&c.isShutudown, 0, 1) {
+	if atomic.CompareAndSwapUint32(&c.isShutdown, 0, 1) {
+		c.shutdownInitiatedChan <- struct{}{}
 		go func() {
 			c.workerWG.Wait()
 			close(c.shutdownChan)
 		}()
 	}
 	<-c.shutdownChan
+	log.Printf("Shutdown complete")
+}
+
+func (c *SQSConsumer) WaitForRxShutdown() {
+	// This channel is only used to detect the close of SQS receive operations and signal the app that there are no more
+	// messages forthcoming beyond the ones currently in flight.
+	log.Printf("Waiting for rx shutdown...")
+	<-c.rxShutdownChan
+	log.Printf("Rx shutdown complete")
 }

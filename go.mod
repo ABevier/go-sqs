@@ -3,7 +3,7 @@ module github.com/abevier/go-sqs
 go 1.18
 
 require (
-	github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829
+	github.com/abevier/tsk v0.0.0-20230712145722-249b1e98b01c
 	github.com/aws/aws-sdk-go-v2/config v1.1.5
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.19.17
 )
