@@ -118,7 +118,7 @@ func (c *SQSConsumer) Start() {
 				numReceivedMessages--
 			case _, ok := <-c.shutdownInitiatedChan:
 				if ok {
-					log.Printf("Initiating shutdown...")
+					log.Printf("gosqs: initiating shutdown...")
 				}
 				// TODO: Do something else if the channel was already closed?
 			}
@@ -187,7 +187,7 @@ func (c *SQSConsumer) processMessage(msg SQSMessage) {
 
 	if err := msg.ack(); err != nil {
 		// TODO: log something??
-		log.Printf("err acking - what do? %v", err)
+		log.Printf("gosqs: err acking - what do? %v", err)
 	}
 }
 
@@ -200,13 +200,13 @@ func (c *SQSConsumer) Shutdown() {
 		}()
 	}
 	<-c.shutdownChan
-	log.Printf("Shutdown complete")
+	log.Printf("gosqs: shutdown complete")
 }
 
 func (c *SQSConsumer) WaitForRxShutdown() {
 	// This channel is only used to detect the close of SQS receive operations and signal the app that there are no more
 	// messages forthcoming beyond the ones currently in flight.
-	log.Printf("Waiting for rx shutdown...")
+	log.Printf("gosqs: waiting for rx shutdown...")
 	<-c.rxShutdownChan
-	log.Printf("Rx shutdown complete")
+	log.Printf("gosqs: rx shutdown complete")
 }
